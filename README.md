@@ -2,6 +2,10 @@
 
 An interactive web-based simulator for visualizing how x86 assembly instructions affect the CPU registers and stack memory. This educational tool helps students and developers understand low-level programming concepts by providing real-time visualization of stack operations.
 
+## Demo
+
+Check out the demo at [https://wellingtonlee.github.io/stack-simulator/](https://wellingtonlee.github.io/stack-simulator/)
+
 ## Features
 
 - **Interactive Code Editor**: Write and edit x86 assembly code directly in the browser

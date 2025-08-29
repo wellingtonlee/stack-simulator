@@ -291,7 +291,7 @@ my_function:
                 stackDiv.innerHTML = html;
                 const espElement = stackDiv.querySelector('.highlight-esp');
                 if (espElement) {
-                    espElement.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                    //espElement.scrollIntoView({ block: 'center', behavior: 'smooth' });
                 }
             }
 
@@ -313,7 +313,7 @@ my_function:
                     const editorRect = codeInput.getBoundingClientRect();
                     const lineRect = highlightedLine.getBoundingClientRect();
                     if (lineRect.bottom > editorRect.bottom || lineRect.top < editorRect.top) {
-                        highlightedLine.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                        //highlightedLine.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
                     }
                 }
             }

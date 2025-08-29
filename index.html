@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>x86 Assembly Stack Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500&display=swap"
+        rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827;
+            color: #d1d5db;
+        }
+
+        .font-mono {
+            font-family: 'Roboto Mono', monospace;
+        }
+
+        .register-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 1rem;
+        }
+
+        .stack-row {
+            transition: background-color 0.3s ease-in-out, transform 0.2s ease-in-out;
+        }
+
+        .stack-row.highlight-esp {
+            background-color: #3b82f630;
+            transform: scale(1.02);
+        }
+
+        .stack-row.highlight-ebp {
+            background-color: #ef444430;
+        }
+
+        .stack-row.highlight-esp.highlight-ebp {
+            background-image: linear-gradient(to right, #3b82f630, #ef444430);
+        }
+
+        .btn {
+            transition: background-color 0.2s, transform 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+
+        #explanation {
+            min-height: 100px;
+            transition: opacity 0.3s;
+        }
+
+        /* Style for the code highlighter */
+        .current-line {
+            background-color: #3b82f630;
+            border-radius: 4px;
+            display: block;
+        }
+
+        #assembly-code:focus .current-line {
+            background-color: transparent;
+            /* Hide highlight when editing */
+        }
+
+        #assembly-code div {
+            min-height: 1.5rem;
+            /* Ensure empty lines have height */
+        }
+
+        /* Custom scrollbar for better aesthetics */
+        #assembly-code::-webkit-scrollbar,
+        #stack-visualization::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        #assembly-code::-webkit-scrollbar-track,
+        #stack-visualization::-webkit-scrollbar-track {
+            background: #1f2937;
+            border-radius: 10px;
+        }
+
+        #assembly-code::-webkit-scrollbar-thumb,
+        #stack-visualization::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 10px;
+        }
+
+        #assembly-code::-webkit-scrollbar-thumb:hover,
+        #stack-visualization::-webkit-scrollbar-thumb:hover {
+            background: #6b7280;
+        }
+    </style>
+</head>
+
+<body class="p-4 md:p-8">
+
+    <div class="max-w-7xl mx-auto">
+        <!-- Header -->
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-white">x86 Assembly Stack Simulator</h1>
+            <p class="text-lg text-gray-400 mt-2">Visualize how instructions like push, pop, and call affect the stack.
+            </p>
+        </header>
+
+        <!-- Main Content Grid -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+
+            <!-- Left Panel: Code & Controls -->
+            <div class="lg:col-span-1 bg-gray-900 p-6 rounded-2xl shadow-lg flex flex-col">
+                <h2 class="text-xl font-semibold text-white mb-4">Assembly Code</h2>
+                <div id="assembly-code"
+                    class="w-full flex-grow min-h-[300px] bg-gray-800 border border-gray-700 rounded-lg p-3 font-mono text-sm text-green-400 focus-within:ring-2 focus-within:ring-blue-500 focus:outline-none overflow-y-auto leading-6"
+                    spellcheck="false" contenteditable="true">
+                </div>
+                <div class="mt-4 flex flex-col sm:flex-row gap-4">
+                    <button id="step-btn"
+                        class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg btn shadow-md">Execute
+                        Next</button>
+                    <button id="reset-btn"
+                        class="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg btn shadow-md">Reset</button>
+                </div>
+                <!-- Legend -->
+                <div class="mt-6 pt-4 border-t border-gray-700">
+                    <h3 class="text-lg font-semibold text-white mb-3">Legend & Instructions</h3>
+                    <div class="flex items-center mb-2">
+                        <div class="w-5 h-5 rounded-sm bg-blue-600/30 mr-3"></div>
+                        <span class="text-sm">ESP (Stack Pointer) / Current Line</span>
+                    </div>
+                    <div class="flex items-center">
+                        <div class="w-5 h-5 rounded-sm bg-red-500/30 mr-3"></div>
+                        <span class="text-sm">EBP (Base Pointer)</span>
+                    </div>
+                    <p class="text-xs text-gray-400 mt-4">
+                        Supported: PUSH, POP, MOV, ADD, SUB, CALL, RET, ENTER, LEAVE. <br>
+                        Operands can be registers (e.g., EAX) or decimal values. <br>
+                        Memory access uses `[esp+offset]` or `[ebp-offset]`. <br>
+                        Lines with ';' or just labels are skipped.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Right Panel Wrapper -->
+            <div class="lg:col-span-1 flex flex-col gap-8">
+                <!-- Registers & Explanation Panel -->
+                <div class="bg-gray-900 p-6 rounded-2xl shadow-lg">
+                    <h2 class="text-xl font-semibold text-white mb-4">CPU Registers</h2>
+                    <div id="registers" class="register-grid font-mono text-sm">
+                        <!-- Registers will be dynamically inserted here -->
+                    </div>
+                    <h2 class="text-xl font-semibold text-white mb-4 mt-8">Explanation</h2>
+                    <div id="explanation"
+                        class="bg-gray-800 border border-gray-700 rounded-lg p-4 text-gray-300 text-sm font-mono">
+                        Welcome! Enter some assembly code or use the example. Click 'Execute Next' to begin.
+                    </div>
+                </div>
+
+                <!-- Stack Visualization Panel -->
+                <div class="bg-gray-900 p-6 rounded-2xl shadow-lg flex flex-col flex-grow">
+                    <h2 class="text-xl font-semibold text-white mb-4">Stack Memory</h2>
+                    <div id="stack-visualization"
+                        class="flex-grow bg-gray-800 border border-gray-700 rounded-lg p-2 font-mono text-xs overflow-y-auto">
+                        <!-- Stack content will be dynamically inserted here -->
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // DOM Elements
+            const codeInput = document.getElementById('assembly-code');
+            const stepBtn = document.getElementById('step-btn');
+            const resetBtn = document.getElementById('reset-btn');
+            const registersDiv = document.getElementById('registers');
+            const stackDiv = document.getElementById('stack-visualization');
+            const explanationDiv = document.getElementById('explanation');
+
+            const initialCode = `; Example Function
+; Use MOV to set register values
+; Then step through the instructions
+mov eax, 10
+mov ebx, 20
+push eax
+push ebx
+mov ecx, [esp+4] ; ecx = eax
+call my_function
+pop eax ; D-stack cleanup
+pop ebx
+
+; A simple function
+my_function:
+  push ebp
+  mov ebp, esp
+  sub esp, 8     ; Allocate space
+  mov [ebp-4], 30
+  mov [ebp-8], 40
+  mov esp, ebp   ; Deallocate
+  pop ebp
+  ret`;
+
+            // --- Simulator State ---
+            const STACK_BASE = 0x800000;
+            const STACK_SIZE = 1024; // 1KB stack
+            const WORD_SIZE = 4;
+
+            let registers;
+            let stack;
+            let instructionPointer;
+            let instructions;
+            let labels;
+
+            // --- Initialization ---
+            function initialize() {
+                registers = {
+                    eax: 0, ebx: 0, ecx: 0, edx: 0,
+                    esp: STACK_BASE,
+                    ebp: STACK_BASE,
+                    eip: 0,
+                };
+                stack = new DataView(new ArrayBuffer(STACK_SIZE));
+                instructionPointer = 0;
+                codeInput.innerText = initialCode;
+                parseCode();
+                updateCodeHighlight(true);
+                updateRegistersUI();
+                updateStackUI();
+                explanationDiv.textContent = "Simulator reset. Ready to execute.";
+                explanationDiv.style.opacity = 1;
+                stepBtn.disabled = false;
+            }
+
+            // --- Code Parsing ---
+            function parseCode() {
+                const code = codeInput.innerText.trim();
+                instructions = code.split('\n').map(line => line.trim().toLowerCase());
+                labels = {};
+                instructions.forEach((line, index) => {
+                    if (line.endsWith(':')) {
+                        labels[line.slice(0, -1)] = index;
+                    }
+                });
+            }
+
+            // --- UI Update Functions ---
+            function updateRegistersUI() {
+                registersDiv.innerHTML = Object.entries(registers)
+                    .map(([reg, val]) => `
+                        <div class="flex justify-between items-center bg-gray-800 p-2 rounded-md">
+                            <span class="font-bold text-gray-400">${reg.toUpperCase()}</span>
+                            <span class="text-blue-400">0x${val.toString(16).padStart(8, '0')}</span>
+                        </div>
+                    `).join('');
+            }
+
+            function updateStackUI() {
+                let html = '';
+                const esp = registers.esp;
+                const ebp = registers.ebp;
+
+                const startAddress = Math.max(STACK_BASE - STACK_SIZE + WORD_SIZE, Math.min(esp - (10 * WORD_SIZE), STACK_BASE - (20 * WORD_SIZE)));
+                const endAddress = Math.min(STACK_BASE, startAddress + (20 * WORD_SIZE));
+
+                for (let addr = endAddress; addr >= startAddress; addr -= WORD_SIZE) {
+                    const isEsp = (addr === esp);
+                    const isEbp = (addr === ebp);
+                    const classList = ['stack-row', 'p-1', 'rounded-sm', 'flex', 'justify-between'];
+                    if (isEsp) classList.push('highlight-esp');
+                    if (isEbp) classList.push('highlight-ebp');
+
+                    const value = stack.getUint32(addr - (STACK_BASE - STACK_SIZE + WORD_SIZE), true);
+
+                    html += `
+                        <div class="${classList.join(' ')}" data-address="0x${addr.toString(16)}">
+                            <span class="text-gray-500">0x${addr.toString(16)}:</span>
+                            <span class="text-green-300">0x${value.toString(16).padStart(8, '0')}</span>
+                            <div class="flex items-center ml-2">
+                               ${isEsp ? '<span class="text-xs text-blue-400 font-bold">&lt; ESP</span>' : ''}
+                               ${isEbp ? '<span class="text-xs text-red-400 font-bold ml-1">&lt; EBP</span>' : ''}
+                            </div>
+                        </div>
+                    `;
+                }
+                stackDiv.innerHTML = html;
+                const espElement = stackDiv.querySelector('.highlight-esp');
+                if (espElement) {
+                    espElement.scrollIntoView({ block: 'center', behavior: 'smooth' });
+                }
+            }
+
+            function updateCodeHighlight(isReset = false) {
+                const savedScrollTop = codeInput.scrollTop;
+                const html = instructions.map((line, index) => {
+                    const escapedLine = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    if (!isReset && index === instructionPointer && !stepBtn.disabled) {
+                        return `<div class="current-line">${escapedLine || '&nbsp;'}</div>`;
+                    }
+                    return `<div>${escapedLine || '&nbsp;'}</div>`;
+                }).join('');
+
+                codeInput.innerHTML = html;
+                codeInput.scrollTop = savedScrollTop;
+
+                const highlightedLine = codeInput.querySelector('.current-line');
+                if (highlightedLine) {
+                    const editorRect = codeInput.getBoundingClientRect();
+                    const lineRect = highlightedLine.getBoundingClientRect();
+                    if (lineRect.bottom > editorRect.bottom || lineRect.top < editorRect.top) {
+                        highlightedLine.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+                    }
+                }
+            }
+
+            function updateAllUI() {
+                updateRegistersUI();
+                updateStackUI();
+                updateCodeHighlight();
+            }
+
+            function setExplanation(text) {
+                explanationDiv.style.opacity = 0;
+                setTimeout(() => {
+                    explanationDiv.textContent = text;
+                    explanationDiv.style.opacity = 1;
+                }, 150);
+            }
+
+            // --- Value & Operand Parsing ---
+            function getValue(operand) {
+                operand = operand.trim();
+                if (registers.hasOwnProperty(operand)) {
+                    return registers[operand];
+                }
+                const num = parseInt(operand, 10);
+                if (!isNaN(num)) {
+                    return num;
+                }
+                // Memory access like [esp+4] or [ebp-8]
+                const match = operand.match(/\[(esp|ebp)\s*([+-])\s*(\d+)\]/);
+                if (match) {
+                    const baseReg = match[1];
+                    const operator = match[2];
+                    const offset = parseInt(match[3], 10);
+                    const baseAddress = registers[baseReg];
+                    const address = (operator === '+') ? baseAddress + offset : baseAddress - offset;
+                    return stack.getUint32(address - (STACK_BASE - STACK_SIZE + WORD_SIZE), true);
+                }
+                return null;
+            }
+
+            function getDestination(operand) {
+                operand = operand.trim();
+                if (registers.hasOwnProperty(operand)) {
+                    return { type: 'register', name: operand };
+                }
+                const match = operand.match(/\[(esp|ebp)\s*([+-])\s*(\d+)\]/);
+                if (match) {
+                    const baseReg = match[1];
+                    const operator = match[2];
+                    const offset = parseInt(match[3], 10);
+                    const baseAddress = registers[baseReg];
+                    const address = (operator === '+') ? baseAddress + offset : baseAddress - offset;
+                    return { type: 'memory', address: address };
+                }
+                return null;
+            }
+
+
+            // --- Instruction Execution ---
+            function step() {
+                if (instructionPointer >= instructions.length) {
+                    setExplanation("End of program.");
+                    stepBtn.disabled = true;
+                    return;
+                }
+
+                let line = instructions[instructionPointer];
+
+                // Skip comments, empty lines and labels
+                while (line.startsWith(';') || line === '' || line.endsWith(':')) {
+                    instructionPointer++;
+                    if (instructionPointer >= instructions.length) {
+                        setExplanation("End of program.");
+                        stepBtn.disabled = true;
+                        updateCodeHighlight();
+                        return;
+                    }
+                    line = instructions[instructionPointer];
+                }
+
+                const parts = line.split(/[\s,]+/);
+                const mnemonic = parts[0];
+                const operands = parts.slice(1);
+
+                let explanation = `Executing: ${line}`;
+                let nextIp = instructionPointer + 1;
+
+                try {
+                    switch (mnemonic) {
+                        case 'push': {
+                            const value = getValue(operands[0]);
+                            if (value === null) throw new Error(`Invalid operand for PUSH: ${operands[0]}`);
+                            registers.esp -= WORD_SIZE;
+                            stack.setUint32(registers.esp - (STACK_BASE - STACK_SIZE + WORD_SIZE), value, true);
+                            explanation += `\n- Decremented ESP to 0x${registers.esp.toString(16)}.\n- Pushed value 0x${value.toString(16)} onto the stack.`;
+                            break;
+                        }
+                        case 'pop': {
+                            const dest = getDestination(operands[0]);
+                            if (dest.type !== 'register') throw new Error(`POP destination must be a register.`);
+                            const value = stack.getUint32(registers.esp - (STACK_BASE - STACK_SIZE + WORD_SIZE), true);
+                            registers[dest.name] = value;
+                            registers.esp += WORD_SIZE;
+                            explanation += `\n- Popped value 0x${value.toString(16)} into ${dest.name.toUpperCase()}.\n- Incremented ESP to 0x${registers.esp.toString(16)}.`;
+                            break;
+                        }
+                        case 'mov': {
+                            const dest = getDestination(operands[0]);
+                            const value = getValue(operands[1]);
+                            if (dest === null || value === null) throw new Error(`Invalid operands for MOV.`);
+                            if (dest.type === 'register') {
+                                registers[dest.name] = value;
+                                explanation += `\n- Moved value 0x${value.toString(16)} into register ${dest.name.toUpperCase()}.`;
+                            } else if (dest.type === 'memory') {
+                                stack.setUint32(dest.address - (STACK_BASE - STACK_SIZE + WORD_SIZE), value, true);
+                                explanation += `\n- Moved value 0x${value.toString(16)} into memory at 0x${dest.address.toString(16)}.`;
+                            }
+                            break;
+                        }
+                        case 'add': {
+                            const dest = getDestination(operands[0]);
+                            const value = getValue(operands[1]);
+                            if (dest.type !== 'register' || value === null) throw new Error(`Invalid operands for ADD.`);
+                            registers[dest.name] += value;
+                            explanation += `\n- Added 0x${value.toString(16)} to ${dest.name.toUpperCase()}. New value: 0x${registers[dest.name].toString(16)}.`;
+                            break;
+                        }
+                        case 'sub': {
+                            const dest = getDestination(operands[0]);
+                            const value = getValue(operands[1]);
+                            if (dest.type !== 'register' || value === null) throw new Error(`Invalid operands for SUB.`);
+                            registers[dest.name] -= value;
+                            explanation += `\n- Subtracted 0x${value.toString(16)} from ${dest.name.toUpperCase()}. New value: 0x${registers[dest.name].toString(16)}.`;
+                            break;
+                        }
+                        case 'call': {
+                            const returnAddr = instructionPointer + 1;
+                            registers.esp -= WORD_SIZE;
+                            stack.setUint32(registers.esp - (STACK_BASE - STACK_SIZE + WORD_SIZE), returnAddr, true);
+                            const targetLabel = operands[0];
+                            if (labels[targetLabel] === undefined) throw new Error(`Label not found: ${targetLabel}`);
+                            nextIp = labels[targetLabel];
+                            explanation += `\n- Pushed return address (${returnAddr}) onto the stack.\n- Jumping to label '${targetLabel}'.`;
+                            break;
+                        }
+                        case 'ret': {
+                            const returnAddr = stack.getUint32(registers.esp - (STACK_BASE - STACK_SIZE + WORD_SIZE), true);
+                            registers.esp += WORD_SIZE;
+                            nextIp = returnAddr;
+                            explanation += `\n- Popped return address (${returnAddr}) from stack.\n- Jumping back.`;
+                            break;
+                        }
+                        case 'enter': { // Combines push ebp; mov ebp, esp
+                            const oldEbp = registers.ebp;
+                            registers.esp -= WORD_SIZE;
+                            stack.setUint32(registers.esp - (STACK_BASE - STACK_SIZE + WORD_SIZE), oldEbp, true);
+                            registers.ebp = registers.esp;
+                            explanation += `\n- Pushed old EBP (0x${oldEbp.toString(16)}) to stack.\n- Set EBP to current ESP (0x${registers.ebp.toString(16)}).`;
+                            break;
+                        }
+                        case 'leave': { // Combines mov esp, ebp; pop ebp
+                            registers.esp = registers.ebp;
+                            const newEbp = stack.getUint32(registers.esp - (STACK_BASE - STACK_SIZE + WORD_SIZE), true);
+                            registers.ebp = newEbp;
+                            registers.esp += WORD_SIZE;
+                            explanation += `\n- Set ESP to EBP's value.\n- Popped old EBP (0x${newEbp.toString(16)}) back into EBP.`;
+                            break;
+                        }
+                        default:
+                            throw new Error(`Unknown instruction: ${mnemonic}`);
+                    }
+                    instructionPointer = nextIp;
+                    setExplanation(explanation);
+                } catch (e) {
+                    setExplanation(`ERROR: ${e.message}\nAt line: ${line}`);
+                    stepBtn.disabled = true;
+                }
+
+                updateAllUI();
+                if (instructionPointer >= instructions.length) {
+                    setExplanation(explanation + "\n\nEnd of program.");
+                    stepBtn.disabled = true;
+                    updateCodeHighlight();
+                }
+            }
+
+            // --- Event Listeners ---
+            stepBtn.addEventListener('click', step);
+            resetBtn.addEventListener('click', initialize);
+            codeInput.addEventListener('blur', () => { // Re-parse code when user clicks away
+                parseCode();
+                updateCodeHighlight(true); // Reset highlight view
+            });
+
+
+            // --- Initial Load ---
+            initialize();
+        });
+    </script>
+
+</body>
+
+</html>

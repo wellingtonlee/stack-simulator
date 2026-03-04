@@ -124,6 +124,8 @@
                         Next</button>
                     <button id="reset-btn"
                         class="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg btn shadow-md">Reset</button>
+                    <button id="share-btn"
+                        class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg btn shadow-md">Share</button>
                 </div>
                 <!-- Legend -->
                 <div class="mt-6 pt-4 border-t border-gray-700">
@@ -137,9 +139,11 @@
                         <span class="text-sm">EBP (Base Pointer)</span>
                     </div>
                     <p class="text-xs text-gray-400 mt-4">
-                        Supported: PUSH, POP, MOV, ADD, SUB, CALL, RET, ENTER, LEAVE. <br>
-                        Operands can be registers (e.g., EAX) or decimal values. <br>
-                        Memory access uses `[esp+offset]` or `[ebp-offset]`. <br>
+                        Supported: PUSH, POP, MOV, ADD, SUB, LEA, CALL, RET, ENTER, LEAVE. <br>
+                        Operands: registers (EAX), decimals (42), hex (0xFF). <br>
+                        Stack memory: <code>[esp+4]</code>, <code>[ebp-8]</code>, <code>[reg]</code>. <br>
+                        Data memory: <code>[x]</code>, <code>[y]</code>, <code>[z]</code> or <code>[0x400000]</code>. <br>
+                        LEA computes address without dereferencing. <br>
                         Lines with ';' or just labels are skipped.
                     </p>
                 </div>
@@ -168,6 +172,15 @@
                         <!-- Stack content will be dynamically inserted here -->
                     </div>
                 </div>
+
+                <!-- Data Memory Panel -->
+                <div class="bg-gray-900 p-6 rounded-2xl shadow-lg">
+                    <h2 class="text-xl font-semibold text-white mb-4">Data Memory</h2>
+                    <div id="data-visualization"
+                        class="bg-gray-800 border border-gray-700 rounded-lg p-2 font-mono text-xs overflow-y-auto">
+                        <!-- Data memory content will be dynamically inserted here -->
+                    </div>
+                </div>
             </div>
 
         </div>
@@ -179,43 +192,96 @@
             const codeInput = document.getElementById('assembly-code');
             const stepBtn = document.getElementById('step-btn');
             const resetBtn = document.getElementById('reset-btn');
+            const shareBtn = document.getElementById('share-btn');
             const registersDiv = document.getElementById('registers');
             const stackDiv = document.getElementById('stack-visualization');
+            const dataDiv = document.getElementById('data-visualization');
             const explanationDiv = document.getElementById('explanation');
 
-            const initialCode = `; Example Function
-; Use MOV to set register values
-; Then step through the instructions
-mov eax, 10
-mov ebx, 20
-push eax
-push ebx
-mov ecx, [esp+4] ; ecx = eax
-call my_function
-pop eax ; D-stack cleanup
-pop ebx
+            const initialCode = `; x86 Stack Simulator Demo
+; Supports hex immediates and data memory
+mov eax, 0xff        ; hex immediate (255)
+mov ebx, [x]         ; load from data label (100)
+mov ecx, [y]         ; load from data label (200)
+add ebx, ecx         ; ebx = 300
+mov [z], ebx         ; store to data memory
 
-; A simple function
-my_function:
-  push ebp
-  mov ebp, esp
-  sub esp, 8     ; Allocate space
-  mov [ebp-4], 30
-  mov [ebp-8], 40
-  mov esp, ebp   ; Deallocate
-  pop ebp
-  ret`;
+; LEA computes address without loading
+push ebp
+mov ebp, esp
+sub esp, 8
+lea eax, [ebp-4]     ; address, not value
+mov [ebp-4], 42
+mov [ebp-8], 99
+
+; Clean up
+mov esp, ebp
+pop ebp`;
 
             // --- Simulator State ---
             const STACK_BASE = 0x800000;
             const STACK_SIZE = 1024; // 1KB stack
             const WORD_SIZE = 4;
 
+            const DATA_BASE = 0x400000;
+            const DATA_SIZE = 64; // 16 dwords
+
             let registers;
             let stack;
+            let dataMemory;
+            let dataLabels;
             let instructionPointer;
             let instructions;
             let labels;
+
+            // --- Memory Helpers ---
+            const STACK_BOTTOM = STACK_BASE - STACK_SIZE + WORD_SIZE;
+
+            function readMemory(address) {
+                if (address >= DATA_BASE && address < DATA_BASE + DATA_SIZE) {
+                    return dataMemory.getUint32(address - DATA_BASE, true);
+                }
+                const offset = address - STACK_BOTTOM;
+                if (offset < 0 || offset + WORD_SIZE > STACK_SIZE) {
+                    throw new Error(`Memory read out of bounds at 0x${address.toString(16)}`);
+                }
+                return stack.getUint32(offset, true);
+            }
+
+            function writeMemory(address, value) {
+                if (address >= DATA_BASE && address < DATA_BASE + DATA_SIZE) {
+                    dataMemory.setUint32(address - DATA_BASE, value, true);
+                    return;
+                }
+                const offset = address - STACK_BOTTOM;
+                if (offset < 0 || offset + WORD_SIZE > STACK_SIZE) {
+                    throw new Error(`Memory write out of bounds at 0x${address.toString(16)}`);
+                }
+                stack.setUint32(offset, value, true);
+            }
+
+            function resolveAddress(inner) {
+                // Data label (x, y, z)
+                if (dataLabels.hasOwnProperty(inner)) {
+                    return dataLabels[inner];
+                }
+                // Hex literal address (0x400000)
+                if (inner.startsWith('0x')) {
+                    return parseInt(inner, 16);
+                }
+                // reg+/-offset (esp+4, ebp-8, ebp-0x4)
+                const match = inner.match(/^(\w+)\s*([+-])\s*(0x[\da-f]+|\d+)$/i);
+                if (match && registers.hasOwnProperty(match[1])) {
+                    const base = registers[match[1]];
+                    const offset = match[3].startsWith('0x') ? parseInt(match[3], 16) : parseInt(match[3], 10);
+                    return match[2] === '+' ? base + offset : base - offset;
+                }
+                // Plain register ([eax])
+                if (registers.hasOwnProperty(inner)) {
+                    return registers[inner];
+                }
+                return null;
+            }
 
             // --- Initialization ---
             function initialize() {
@@ -226,12 +292,33 @@ my_function:
                     eip: 0,
                 };
                 stack = new DataView(new ArrayBuffer(STACK_SIZE));
+                dataMemory = new DataView(new ArrayBuffer(DATA_SIZE));
+                dataLabels = { x: DATA_BASE, y: DATA_BASE + 4, z: DATA_BASE + 8 };
+                // Preset data values
+                dataMemory.setUint32(0, 100, true);   // x = 100
+                dataMemory.setUint32(4, 200, true);   // y = 200
+                dataMemory.setUint32(8, 0, true);     // z = 0
+
                 instructionPointer = 0;
-                codeInput.innerText = initialCode;
+
+                // Load code from URL hash or use default
+                try {
+                    const hash = window.location.hash;
+                    if (hash.startsWith('#code=')) {
+                        const encoded = decodeURIComponent(hash.slice(6));
+                        codeInput.innerText = decodeURIComponent(escape(atob(encoded)));
+                    } else {
+                        codeInput.innerText = initialCode;
+                    }
+                } catch (e) {
+                    codeInput.innerText = initialCode;
+                }
+
                 parseCode();
                 updateCodeHighlight(true);
                 updateRegistersUI();
                 updateStackUI();
+                updateDataUI();
                 explanationDiv.textContent = "Simulator reset. Ready to execute.";
                 explanationDiv.style.opacity = 1;
                 stepBtn.disabled = false;
@@ -295,6 +382,21 @@ my_function:
                 }
             }
 
+            function updateDataUI() {
+                let html = '';
+                for (const [label, addr] of Object.entries(dataLabels)) {
+                    const value = dataMemory.getUint32(addr - DATA_BASE, true);
+                    html += `
+                        <div class="p-1 rounded-sm flex justify-between">
+                            <span class="text-yellow-400 w-8">${label}</span>
+                            <span class="text-gray-500">0x${addr.toString(16).padStart(6, '0')}</span>
+                            <span class="text-green-300">0x${value.toString(16).padStart(8, '0')}</span>
+                        </div>
+                    `;
+                }
+                dataDiv.innerHTML = html;
+            }
+
             function updateCodeHighlight(isReset = false) {
                 const savedScrollTop = codeInput.scrollTop;
                 const html = instructions.map((line, index) => {
@@ -321,6 +423,7 @@ my_function:
             function updateAllUI() {
                 updateRegistersUI();
                 updateStackUI();
+                updateDataUI();
                 updateCodeHighlight();
             }
 
@@ -338,19 +441,21 @@ my_function:
                 if (registers.hasOwnProperty(operand)) {
                     return registers[operand];
                 }
+                // Hex number
+                if (operand.startsWith('0x')) {
+                    const num = parseInt(operand, 16);
+                    if (!isNaN(num)) return num;
+                }
+                // Decimal number
                 const num = parseInt(operand, 10);
                 if (!isNaN(num)) {
                     return num;
                 }
-                // Memory access like [esp+4] or [ebp-8]
-                const match = operand.match(/\[(esp|ebp)\s*([+-])\s*(\d+)\]/);
-                if (match) {
-                    const baseReg = match[1];
-                    const operator = match[2];
-                    const offset = parseInt(match[3], 10);
-                    const baseAddress = registers[baseReg];
-                    const address = (operator === '+') ? baseAddress + offset : baseAddress - offset;
-                    return stack.getUint32(address - (STACK_BASE - STACK_SIZE + WORD_SIZE), true);
+                // Memory access [...]
+                if (operand.startsWith('[') && operand.endsWith(']')) {
+                    const inner = operand.slice(1, -1).trim();
+                    const addr = resolveAddress(inner);
+                    if (addr !== null) return readMemory(addr);
                 }
                 return null;
             }
@@ -360,18 +465,25 @@ my_function:
                 if (registers.hasOwnProperty(operand)) {
                     return { type: 'register', name: operand };
                 }
-                const match = operand.match(/\[(esp|ebp)\s*([+-])\s*(\d+)\]/);
-                if (match) {
-                    const baseReg = match[1];
-                    const operator = match[2];
-                    const offset = parseInt(match[3], 10);
-                    const baseAddress = registers[baseReg];
-                    const address = (operator === '+') ? baseAddress + offset : baseAddress - offset;
-                    return { type: 'memory', address: address };
+                if (operand.startsWith('[') && operand.endsWith(']')) {
+                    const inner = operand.slice(1, -1).trim();
+                    const addr = resolveAddress(inner);
+                    if (addr !== null) return { type: 'memory', address: addr };
                 }
                 return null;
             }
 
+            // --- URL Sharing ---
+            function shareCode() {
+                const code = codeInput.innerText;
+                const encoded = btoa(unescape(encodeURIComponent(code)));
+                const url = window.location.origin + window.location.pathname + '#code=' + encodeURIComponent(encoded);
+                navigator.clipboard.writeText(url).then(() => {
+                    setExplanation('Share URL copied to clipboard!');
+                }).catch(() => {
+                    setExplanation('Share URL: ' + url);
+                });
+            }
 
             // --- Instruction Execution ---
             function step() {
@@ -407,15 +519,17 @@ my_function:
                         case 'push': {
                             const value = getValue(operands[0]);
                             if (value === null) throw new Error(`Invalid operand for PUSH: ${operands[0]}`);
+                            if (registers.esp - WORD_SIZE < STACK_BOTTOM) throw new Error('Stack overflow: no space left on the stack.');
                             registers.esp -= WORD_SIZE;
-                            stack.setUint32(registers.esp - (STACK_BASE - STACK_SIZE + WORD_SIZE), value, true);
+                            writeMemory(registers.esp, value);
                             explanation += `\n- Decremented ESP to 0x${registers.esp.toString(16)}.\n- Pushed value 0x${value.toString(16)} onto the stack.`;
                             break;
                         }
                         case 'pop': {
                             const dest = getDestination(operands[0]);
                             if (dest.type !== 'register') throw new Error(`POP destination must be a register.`);
-                            const value = stack.getUint32(registers.esp - (STACK_BASE - STACK_SIZE + WORD_SIZE), true);
+                            if (registers.esp >= STACK_BASE) throw new Error('Stack underflow: stack is empty.');
+                            const value = readMemory(registers.esp);
                             registers[dest.name] = value;
                             registers.esp += WORD_SIZE;
                             explanation += `\n- Popped value 0x${value.toString(16)} into ${dest.name.toUpperCase()}.\n- Incremented ESP to 0x${registers.esp.toString(16)}.`;
@@ -429,7 +543,7 @@ my_function:
                                 registers[dest.name] = value;
                                 explanation += `\n- Moved value 0x${value.toString(16)} into register ${dest.name.toUpperCase()}.`;
                             } else if (dest.type === 'memory') {
-                                stack.setUint32(dest.address - (STACK_BASE - STACK_SIZE + WORD_SIZE), value, true);
+                                writeMemory(dest.address, value);
                                 explanation += `\n- Moved value 0x${value.toString(16)} into memory at 0x${dest.address.toString(16)}.`;
                             }
                             break;
@@ -450,10 +564,23 @@ my_function:
                             explanation += `\n- Subtracted 0x${value.toString(16)} from ${dest.name.toUpperCase()}. New value: 0x${registers[dest.name].toString(16)}.`;
                             break;
                         }
+                        case 'lea': {
+                            const dest = getDestination(operands[0]);
+                            if (dest === null || dest.type !== 'register') throw new Error('LEA destination must be a register.');
+                            const src = operands[1];
+                            if (!src || !src.startsWith('[') || !src.endsWith(']')) throw new Error('LEA source must be a memory reference.');
+                            const inner = src.slice(1, -1).trim();
+                            const address = resolveAddress(inner);
+                            if (address === null) throw new Error(`Invalid LEA source: ${src}`);
+                            registers[dest.name] = address;
+                            explanation += `\n- Loaded effective address 0x${address.toString(16)} into ${dest.name.toUpperCase()}.`;
+                            break;
+                        }
                         case 'call': {
                             const returnAddr = instructionPointer + 1;
+                            if (registers.esp - WORD_SIZE < STACK_BOTTOM) throw new Error('Stack overflow: no space left on the stack.');
                             registers.esp -= WORD_SIZE;
-                            stack.setUint32(registers.esp - (STACK_BASE - STACK_SIZE + WORD_SIZE), returnAddr, true);
+                            writeMemory(registers.esp, returnAddr);
                             const targetLabel = operands[0];
                             if (labels[targetLabel] === undefined) throw new Error(`Label not found: ${targetLabel}`);
                             nextIp = labels[targetLabel];
@@ -461,7 +588,8 @@ my_function:
                             break;
                         }
                         case 'ret': {
-                            const returnAddr = stack.getUint32(registers.esp - (STACK_BASE - STACK_SIZE + WORD_SIZE), true);
+                            if (registers.esp >= STACK_BASE) throw new Error('Stack underflow: cannot RET with an empty stack.');
+                            const returnAddr = readMemory(registers.esp);
                             registers.esp += WORD_SIZE;
                             nextIp = returnAddr;
                             explanation += `\n- Popped return address (${returnAddr}) from stack.\n- Jumping back.`;
@@ -469,15 +597,17 @@ my_function:
                         }
                         case 'enter': { // Combines push ebp; mov ebp, esp
                             const oldEbp = registers.ebp;
+                            if (registers.esp - WORD_SIZE < STACK_BOTTOM) throw new Error('Stack overflow: no space left on the stack.');
                             registers.esp -= WORD_SIZE;
-                            stack.setUint32(registers.esp - (STACK_BASE - STACK_SIZE + WORD_SIZE), oldEbp, true);
+                            writeMemory(registers.esp, oldEbp);
                             registers.ebp = registers.esp;
                             explanation += `\n- Pushed old EBP (0x${oldEbp.toString(16)}) to stack.\n- Set EBP to current ESP (0x${registers.ebp.toString(16)}).`;
                             break;
                         }
                         case 'leave': { // Combines mov esp, ebp; pop ebp
                             registers.esp = registers.ebp;
-                            const newEbp = stack.getUint32(registers.esp - (STACK_BASE - STACK_SIZE + WORD_SIZE), true);
+                            if (registers.esp >= STACK_BASE) throw new Error('Stack underflow: cannot LEAVE with an empty stack.');
+                            const newEbp = readMemory(registers.esp);
                             registers.ebp = newEbp;
                             registers.esp += WORD_SIZE;
                             explanation += `\n- Set ESP to EBP's value.\n- Popped old EBP (0x${newEbp.toString(16)}) back into EBP.`;
@@ -504,6 +634,7 @@ my_function:
             // --- Event Listeners ---
             stepBtn.addEventListener('click', step);
             resetBtn.addEventListener('click', initialize);
+            shareBtn.addEventListener('click', shareCode);
             codeInput.addEventListener('blur', () => { // Re-parse code when user clicks away
                 parseCode();
                 updateCodeHighlight(true); // Reset highlight view

@@ -490,7 +490,8 @@ pop ebp`;
 
                 // Load code: keep current instructions, load from URL hash, or use default
                 if (keepCode) {
-                    codeInput.innerText = instructions.join('\n');
+                    codeInput.querySelectorAll('.line-info').forEach(el => el.remove());
+                    codeInput.innerText = codeInput.innerText;
                 } else {
                     try {
                         const hash = window.location.hash;

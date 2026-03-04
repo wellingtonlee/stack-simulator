@@ -71,17 +71,6 @@
             display: block;
         }
 
-        #assembly-code:focus .current-line,
-        #assembly-code:focus .executed-line {
-            background-color: transparent;
-            border-left: none;
-            /* Hide highlights when editing */
-        }
-
-        #assembly-code:focus .line-info {
-            display: none;
-        }
-
         .line-info {
             user-select: none;
         }
@@ -115,10 +104,13 @@
             display: inline-block;
             width: 12px;
             height: 12px;
-            cursor: pointer;
             margin-right: 2px;
             flex-shrink: 0;
             vertical-align: middle;
+        }
+
+        .line-info {
+            cursor: pointer;
         }
 
         .breakpoint-line {
@@ -170,10 +162,13 @@
 
             <!-- Left Panel: Code & Controls -->
             <div class="lg:col-span-1 bg-gray-900 p-6 rounded-2xl shadow-lg flex flex-col">
-                <h2 class="text-xl font-semibold text-white mb-4">Assembly Code</h2>
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-xl font-semibold text-white">Assembly Code</h2>
+                    <button id="edit-btn" class="px-3 py-1 text-xs font-medium rounded bg-gray-700 hover:bg-gray-600 text-gray-300">Edit</button>
+                </div>
                 <div id="assembly-code"
-                    class="w-full flex-grow min-h-[300px] bg-gray-800 border border-gray-700 rounded-lg p-3 font-mono text-sm text-green-400 focus-within:ring-2 focus-within:ring-blue-500 focus:outline-none overflow-y-auto leading-6"
-                    spellcheck="false" contenteditable="true">
+                    class="w-full flex-grow min-h-[300px] bg-gray-800 border border-gray-700 rounded-lg p-3 font-mono text-sm text-green-400 focus:outline-none overflow-y-auto leading-6"
+                    spellcheck="false" contenteditable="false">
                 </div>
                 <div class="mt-4 flex flex-col sm:flex-row gap-4">
                     <button id="step-back-btn"
@@ -217,7 +212,7 @@
                     </div>
                     <div class="flex items-center">
                         <div class="w-2 h-2 rounded-full bg-red-500 mr-4 ml-1.5"></div>
-                        <span class="text-sm">Breakpoint (click gutter to toggle)</span>
+                        <span class="text-sm">Breakpoint (click line number to toggle)</span>
                     </div>
                     <p class="text-xs text-gray-400 mt-4">
                         Supported: PUSH, POP, MOV, ADD, SUB, XOR, AND, OR, NOT, INC, DEC, NOP, LEA, CMP, TEST, SHL, SHR, NEG, XCHG, JMP, JZ/JE, JNZ/JNE, CALL, RET, ENTER, LEAVE. <br>
@@ -304,6 +299,7 @@
             const copyLogBtn = document.getElementById('copy-log-btn');
             const speedSlider = document.getElementById('speed-slider');
             const speedLabel = document.getElementById('speed-label');
+            const editBtn = document.getElementById('edit-btn');
 
             const initialCode = `; x86 Stack Simulator Demo
 ; Sum 1..5 using a loop, store in data memory
@@ -362,6 +358,7 @@ pop ebp`;
             let explanationLog = [];
             let explanationStepCounter = 0;
             let activeExplanationTab = 'latest';
+            let isEditMode = false;
 
             // --- Memory Helpers ---
             const STACK_BOTTOM = STACK_BASE - STACK_SIZE + WORD_SIZE;
@@ -429,8 +426,40 @@ pop ebp`;
                 return null;
             }
 
+            // --- Edit Mode ---
+            function enterEditMode() {
+                isEditMode = true;
+                codeInput.contentEditable = 'true';
+                codeInput.querySelectorAll('.line-info').forEach(el => el.remove());
+                codeInput.classList.remove('border-gray-700');
+                codeInput.classList.add('border-green-500', 'ring-2', 'ring-green-500');
+                editBtn.textContent = 'Done';
+                editBtn.classList.remove('bg-gray-700', 'hover:bg-gray-600', 'text-gray-300');
+                editBtn.classList.add('bg-green-600', 'hover:bg-green-500', 'text-white');
+                codeInput.focus();
+                stepBtn.disabled = true;
+                runBtn.disabled = true;
+                stepBackBtn.disabled = true;
+                shareBtn.disabled = true;
+            }
+
+            function exitEditMode() {
+                isEditMode = false;
+                codeInput.contentEditable = 'false';
+                codeInput.classList.remove('border-green-500', 'ring-2', 'ring-green-500');
+                codeInput.classList.add('border-gray-700');
+                editBtn.textContent = 'Edit';
+                editBtn.classList.remove('bg-green-600', 'hover:bg-green-500', 'text-white');
+                editBtn.classList.add('bg-gray-700', 'hover:bg-gray-600', 'text-gray-300');
+                stepBtn.disabled = false;
+                runBtn.disabled = false;
+                stepBackBtn.disabled = false;
+                shareBtn.disabled = false;
+            }
+
             // --- Initialization ---
             function initialize() {
+                if (isEditMode) exitEditMode();
                 registers = {
                     eax: 0, ebx: 0, ecx: 0, edx: 0,
                     esp: STACK_BASE,
@@ -604,10 +633,8 @@ pop ebp`;
                     const addrStr = addr !== null ? formatAddr(addr) : ' '.repeat(10);
                     const isExecutable = addr !== null;
                     const hasBp = breakpoints.has(index);
-                    const bpGutter = isExecutable
-                        ? `<span class="${hasBp ? 'breakpoint-dot' : 'breakpoint-gutter'}" data-bp-line="${index}"></span>`
-                        : `<span class="breakpoint-gutter"></span>`;
-                    const lineInfo = `<span class="line-info">${bpGutter}<span class="text-gray-600">${lineNum}</span> <span class="text-gray-500">${addrStr}</span> </span>`;
+                    const bpGutter = `<span class="${hasBp ? 'breakpoint-dot' : 'breakpoint-gutter'}"></span>`;
+                    const lineInfo = `<span class="line-info"${isExecutable ? ` data-bp-line="${index}"` : ''}>${bpGutter}<span class="text-gray-600">${lineNum}</span> <span class="text-gray-500">${addrStr}</span> </span>`;
 
                     const bpClass = hasBp ? ' breakpoint-line' : '';
                     if (!isReset && index === instructionPointer && !stepBtn.disabled) {
@@ -621,21 +648,6 @@ pop ebp`;
 
                 codeInput.innerHTML = html;
                 codeInput.scrollTop = savedScrollTop;
-
-                // Attach breakpoint click handlers (mousedown to prevent contenteditable focus)
-                codeInput.querySelectorAll('[data-bp-line]').forEach(el => {
-                    el.addEventListener('mousedown', (e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        const lineIdx = parseInt(el.dataset.bpLine);
-                        if (breakpoints.has(lineIdx)) {
-                            breakpoints.delete(lineIdx);
-                        } else {
-                            breakpoints.add(lineIdx);
-                        }
-                        updateCodeHighlight(isReset);
-                    });
-                });
 
                 const highlightedLine = codeInput.querySelector('.current-line');
                 if (highlightedLine) {
@@ -1204,14 +1216,31 @@ pop ebp`;
                     runAll(); // toggles off
                 }
             });
-            codeInput.addEventListener('focus', () => {
-                codeInput.querySelectorAll('.line-info').forEach(el => el.remove());
+            codeInput.addEventListener('mousedown', (e) => {
+                const lineInfo = e.target.closest('.line-info');
+                if (lineInfo) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const bpLine = lineInfo.dataset.bpLine;
+                    if (bpLine !== undefined) {
+                        const lineIdx = parseInt(bpLine);
+                        if (breakpoints.has(lineIdx)) {
+                            breakpoints.delete(lineIdx);
+                        } else {
+                            breakpoints.add(lineIdx);
+                        }
+                        updateCodeHighlight();
+                    }
+                }
             });
-            codeInput.addEventListener('blur', () => {
-                parseCode();
-                updateCodeHighlight(true);
+            editBtn.addEventListener('click', () => {
+                if (isEditMode) {
+                    exitEditMode();
+                    initialize();
+                } else {
+                    enterEditMode();
+                }
             });
-
 
             // --- Initial Load ---
             initialize();

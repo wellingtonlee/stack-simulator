@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-03-04 (v4)
+
+### Added
+- Edit mode toggle — dedicated Edit/Done button, green border in edit mode, read-only by default
+
 ## 2026-03-04 (v3)
 
 ### Added

@@ -488,8 +488,10 @@ pop ebp`;
                 explanationStepCounter = 0;
                 switchExplanationTab('latest');
 
-                // Load code from URL hash or use default (skip if keeping user edits)
-                if (!keepCode) {
+                // Load code: keep current instructions, load from URL hash, or use default
+                if (keepCode) {
+                    codeInput.innerText = instructions.join('\n');
+                } else {
                     try {
                         const hash = window.location.hash;
                         if (hash.startsWith('#code=')) {
@@ -775,7 +777,7 @@ pop ebp`;
 
             // --- URL Sharing ---
             function shareCode() {
-                const code = codeInput.innerText;
+                const code = instructions.join('\n');
                 const encoded = btoa(unescape(encodeURIComponent(code)));
                 const url = window.location.origin + window.location.pathname + '#code=' + encodeURIComponent(encoded);
                 navigator.clipboard.writeText(url).then(() => {

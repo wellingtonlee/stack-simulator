@@ -278,6 +278,9 @@
             </div>
 
         </div>
+        <div class="text-center mt-4">
+            <button id="reset-default-btn" class="px-3 py-1 text-xs font-medium rounded bg-gray-700 hover:bg-gray-600 text-gray-400">Reset to Default Code</button>
+        </div>
     </div>
 
     <script>
@@ -300,6 +303,7 @@
             const speedSlider = document.getElementById('speed-slider');
             const speedLabel = document.getElementById('speed-label');
             const editBtn = document.getElementById('edit-btn');
+            const resetDefaultBtn = document.getElementById('reset-default-btn');
 
             const initialCode = `; x86 Stack Simulator Demo
 ; Sum 1..5 using a loop, store in data memory
@@ -458,7 +462,7 @@ pop ebp`;
             }
 
             // --- Initialization ---
-            function initialize() {
+            function initialize(keepCode) {
                 if (isEditMode) exitEditMode();
                 registers = {
                     eax: 0, ebx: 0, ecx: 0, edx: 0,
@@ -484,17 +488,19 @@ pop ebp`;
                 explanationStepCounter = 0;
                 switchExplanationTab('latest');
 
-                // Load code from URL hash or use default
-                try {
-                    const hash = window.location.hash;
-                    if (hash.startsWith('#code=')) {
-                        const encoded = decodeURIComponent(hash.slice(6));
-                        codeInput.innerText = decodeURIComponent(escape(atob(encoded)));
-                    } else {
+                // Load code from URL hash or use default (skip if keeping user edits)
+                if (!keepCode) {
+                    try {
+                        const hash = window.location.hash;
+                        if (hash.startsWith('#code=')) {
+                            const encoded = decodeURIComponent(hash.slice(6));
+                            codeInput.innerText = decodeURIComponent(escape(atob(encoded)));
+                        } else {
+                            codeInput.innerText = initialCode;
+                        }
+                    } catch (e) {
                         codeInput.innerText = initialCode;
                     }
-                } catch (e) {
-                    codeInput.innerText = initialCode;
                 }
 
                 parseCode();
@@ -1197,6 +1203,15 @@ pop ebp`;
                     runInterval = null;
                     runBtn.textContent = 'Run All';
                 }
+                initialize(true);
+            });
+            resetDefaultBtn.addEventListener('click', () => {
+                if (runInterval) {
+                    clearInterval(runInterval);
+                    runInterval = null;
+                    runBtn.textContent = 'Run All';
+                }
+                window.location.hash = '';
                 initialize();
             });
             shareBtn.addEventListener('click', shareCode);
@@ -1236,7 +1251,7 @@ pop ebp`;
             editBtn.addEventListener('click', () => {
                 if (isEditMode) {
                     exitEditMode();
-                    initialize();
+                    initialize(true);
                 } else {
                     enterEditMode();
                 }

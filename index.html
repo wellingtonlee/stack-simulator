@@ -63,9 +63,19 @@
             display: block;
         }
 
-        #assembly-code:focus .current-line {
+        .executed-line {
+            background-color: #10b98120;
+            border-left: 3px solid #10b981;
+            padding-left: 4px;
+            border-radius: 4px;
+            display: block;
+        }
+
+        #assembly-code:focus .current-line,
+        #assembly-code:focus .executed-line {
             background-color: transparent;
-            /* Hide highlight when editing */
+            border-left: none;
+            /* Hide highlights when editing */
         }
 
         #assembly-code div {
@@ -132,18 +142,23 @@
                     <h3 class="text-lg font-semibold text-white mb-3">Legend & Instructions</h3>
                     <div class="flex items-center mb-2">
                         <div class="w-5 h-5 rounded-sm bg-blue-600/30 mr-3"></div>
-                        <span class="text-sm">ESP (Stack Pointer) / Current Line</span>
+                        <span class="text-sm">ESP (Stack Pointer) / Next Instruction</span>
+                    </div>
+                    <div class="flex items-center mb-2">
+                        <div class="w-5 h-5 rounded-sm bg-emerald-500/20 border-l-[3px] border-emerald-500 mr-3"></div>
+                        <span class="text-sm">Last Executed Instruction</span>
                     </div>
                     <div class="flex items-center">
                         <div class="w-5 h-5 rounded-sm bg-red-500/30 mr-3"></div>
                         <span class="text-sm">EBP (Base Pointer)</span>
                     </div>
                     <p class="text-xs text-gray-400 mt-4">
-                        Supported: PUSH, POP, MOV, ADD, SUB, LEA, CALL, RET, ENTER, LEAVE. <br>
+                        Supported: PUSH, POP, MOV, ADD, SUB, LEA, CMP, JMP, JZ/JE, JNZ/JNE, CALL, RET, ENTER, LEAVE. <br>
                         Operands: registers (EAX), decimals (42), hex (0xFF). <br>
                         Stack memory: <code>[esp+4]</code>, <code>[ebp-8]</code>, <code>[reg]</code>. <br>
                         Data memory: <code>[x]</code>, <code>[y]</code>, <code>[z]</code> or <code>[0x400000]</code>. <br>
                         LEA computes address without dereferencing. <br>
+                        CMP sets zero flag; JZ/JNZ branch on it. <br>
                         Lines with ';' or just labels are skipped.
                     </p>
                 </div>
@@ -199,22 +214,31 @@
             const explanationDiv = document.getElementById('explanation');
 
             const initialCode = `; x86 Stack Simulator Demo
-; Supports hex immediates and data memory
-mov eax, 0xff        ; hex immediate (255)
-mov ebx, [x]         ; load from data label (100)
-mov ecx, [y]         ; load from data label (200)
-add ebx, ecx         ; ebx = 300
-mov [z], ebx         ; store to data memory
+; Sum 1..5 using a loop, store in data memory
+mov eax, 0           ; accumulator
+mov ecx, 5           ; counter
 
-; LEA computes address without loading
+loop_start:
+  add eax, ecx       ; eax += ecx
+  sub ecx, 1         ; ecx--
+  cmp ecx, 0
+  jnz loop_start     ; repeat until ecx == 0
+
+mov [z], eax         ; store result (15)
+
+; Data memory + LEA demo
+mov ebx, [x]         ; load x (100)
+mov ecx, [y]         ; load y (200)
+add ebx, ecx
+mov [z], ebx         ; z = 300
+
+; Stack frame with LEA
 push ebp
 mov ebp, esp
 sub esp, 8
 lea eax, [ebp-4]     ; address, not value
-mov [ebp-4], 42
-mov [ebp-8], 99
-
-; Clean up
+mov [ebp-4], 0xff    ; hex immediate
+mov [ebp-8], 42
 mov esp, ebp
 pop ebp`;
 
@@ -231,6 +255,8 @@ pop ebp`;
             let dataMemory;
             let dataLabels;
             let instructionPointer;
+            let flags;
+            let lastExecutedLine;
             let instructions;
             let labels;
 
@@ -276,6 +302,22 @@ pop ebp`;
                     const offset = match[3].startsWith('0x') ? parseInt(match[3], 16) : parseInt(match[3], 10);
                     return match[2] === '+' ? base + offset : base - offset;
                 }
+                // reg+/-reg+/-offset (eax+ecx+2, ebx+edx-4)
+                const rroMatch = inner.match(/^(\w+)\s*([+-])\s*(\w+)\s*([+-])\s*(0x[\da-f]+|\d+)$/i);
+                if (rroMatch && registers.hasOwnProperty(rroMatch[1]) && registers.hasOwnProperty(rroMatch[3])) {
+                    const base = registers[rroMatch[1]];
+                    const index = registers[rroMatch[3]];
+                    const disp = rroMatch[5].startsWith('0x') ? parseInt(rroMatch[5], 16) : parseInt(rroMatch[5], 10);
+                    const regSum = rroMatch[2] === '+' ? base + index : base - index;
+                    return rroMatch[4] === '+' ? regSum + disp : regSum - disp;
+                }
+                // reg+/-reg (eax+ecx, ebx-edx)
+                const regMatch = inner.match(/^(\w+)\s*([+-])\s*(\w+)$/);
+                if (regMatch && registers.hasOwnProperty(regMatch[1]) && registers.hasOwnProperty(regMatch[3])) {
+                    const base = registers[regMatch[1]];
+                    const index = registers[regMatch[3]];
+                    return regMatch[2] === '+' ? base + index : base - index;
+                }
                 // Plain register ([eax])
                 if (registers.hasOwnProperty(inner)) {
                     return registers[inner];
@@ -291,6 +333,7 @@ pop ebp`;
                     ebp: STACK_BASE,
                     eip: 0,
                 };
+                flags = { zero: false };
                 stack = new DataView(new ArrayBuffer(STACK_SIZE));
                 dataMemory = new DataView(new ArrayBuffer(DATA_SIZE));
                 dataLabels = { x: DATA_BASE, y: DATA_BASE + 4, z: DATA_BASE + 8 };
@@ -300,6 +343,7 @@ pop ebp`;
                 dataMemory.setUint32(8, 0, true);     // z = 0
 
                 instructionPointer = 0;
+                lastExecutedLine = -1;
 
                 // Load code from URL hash or use default
                 try {
@@ -404,6 +448,9 @@ pop ebp`;
                     if (!isReset && index === instructionPointer && !stepBtn.disabled) {
                         return `<div class="current-line">${escapedLine || '&nbsp;'}</div>`;
                     }
+                    if (!isReset && index === lastExecutedLine) {
+                        return `<div class="executed-line">${escapedLine || '&nbsp;'}</div>`;
+                    }
                     return `<div>${escapedLine || '&nbsp;'}</div>`;
                 }).join('');
 
@@ -507,6 +554,8 @@ pop ebp`;
                     line = instructions[instructionPointer];
                 }
 
+                lastExecutedLine = instructionPointer;
+
                 const parts = line.split(/[\s,]+/);
                 const mnemonic = parts[0];
                 const operands = parts.slice(1);
@@ -574,6 +623,46 @@ pop ebp`;
                             if (address === null) throw new Error(`Invalid LEA source: ${src}`);
                             registers[dest.name] = address;
                             explanation += `\n- Loaded effective address 0x${address.toString(16)} into ${dest.name.toUpperCase()}.`;
+                            break;
+                        }
+                        case 'cmp': {
+                            const left = getValue(operands[0]);
+                            const right = getValue(operands[1]);
+                            if (left === null || right === null) throw new Error('Invalid operands for CMP.');
+                            const result = left - right;
+                            flags.zero = (result === 0);
+                            explanation += `\n- Compared 0x${left.toString(16)} with 0x${right.toString(16)}. Zero flag = ${flags.zero}.`;
+                            break;
+                        }
+                        case 'jmp': {
+                            const target = operands[0];
+                            if (labels[target] === undefined) throw new Error(`Label not found: ${target}`);
+                            nextIp = labels[target];
+                            explanation += `\n- Unconditional jump to '${target}'.`;
+                            break;
+                        }
+                        case 'jz':
+                        case 'je': {
+                            const target = operands[0];
+                            if (labels[target] === undefined) throw new Error(`Label not found: ${target}`);
+                            if (flags.zero) {
+                                nextIp = labels[target];
+                                explanation += `\n- Zero flag is set. Jumping to '${target}'.`;
+                            } else {
+                                explanation += `\n- Zero flag is not set. Not jumping.`;
+                            }
+                            break;
+                        }
+                        case 'jnz':
+                        case 'jne': {
+                            const target = operands[0];
+                            if (labels[target] === undefined) throw new Error(`Label not found: ${target}`);
+                            if (!flags.zero) {
+                                nextIp = labels[target];
+                                explanation += `\n- Zero flag is not set. Jumping to '${target}'.`;
+                            } else {
+                                explanation += `\n- Zero flag is set. Not jumping.`;
+                            }
                             break;
                         }
                         case 'call': {

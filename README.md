@@ -14,6 +14,7 @@ Check out the demo at [https://wellingtonlee.github.io/stack-simulator/](https:/
 - **Register Monitoring**: View current values of all CPU registers (EAX, EBX, ECX, EDX, ESP, EBP, EIP)
 - **Stack Memory View**: Visual representation of stack memory with ESP and EBP highlighting
 - **Detailed Explanations**: Get explanations for each instruction as it executes
+- **Execution Log**: Browse full explanation history in the "Log" tab, copy execution trace to clipboard
 
 ## How to Use
 

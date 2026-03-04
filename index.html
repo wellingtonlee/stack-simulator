@@ -78,6 +78,53 @@
             /* Hide highlights when editing */
         }
 
+        #assembly-code:focus .line-info {
+            display: none;
+        }
+
+        .line-info {
+            user-select: none;
+        }
+
+        .stack-row.highlight-changed {
+            background-color: #f59e0b40;
+            border-left: 3px solid #f59e0b;
+        }
+
+        .register-grid .highlight-changed {
+            background-color: #f59e0b40;
+            transition: background-color 0.3s;
+        }
+
+        .register-grid > div {
+            transition: background-color 0.3s;
+        }
+
+        .breakpoint-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: #ef4444;
+            cursor: pointer;
+            margin-right: 4px;
+            flex-shrink: 0;
+        }
+
+        .breakpoint-gutter {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            cursor: pointer;
+            margin-right: 2px;
+            flex-shrink: 0;
+            vertical-align: middle;
+        }
+
+        .breakpoint-line {
+            background-color: #ef444420 !important;
+        }
+
         #assembly-code div {
             min-height: 1.5rem;
             /* Ensure empty lines have height */
@@ -129,37 +176,60 @@
                     spellcheck="false" contenteditable="true">
                 </div>
                 <div class="mt-4 flex flex-col sm:flex-row gap-4">
+                    <button id="step-back-btn"
+                        class="flex-1 bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 px-4 rounded-lg btn shadow-md" disabled>Step
+                        Back</button>
                     <button id="step-btn"
                         class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg btn shadow-md">Execute
                         Next</button>
+                    <button id="run-btn"
+                        class="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg btn shadow-md">Run
+                        All</button>
                     <button id="reset-btn"
                         class="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-4 rounded-lg btn shadow-md">Reset</button>
                     <button id="share-btn"
                         class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg btn shadow-md">Share</button>
+                </div>
+                <div class="mt-3 flex items-center gap-3">
+                    <label class="text-sm text-gray-400 whitespace-nowrap">Speed:</label>
+                    <input id="speed-slider" type="range" min="50" max="2000" value="1000" step="50"
+                        class="flex-grow h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500">
+                    <span id="speed-label" class="text-sm text-gray-400 font-mono w-16 text-right">1000ms</span>
                 </div>
                 <!-- Legend -->
                 <div class="mt-6 pt-4 border-t border-gray-700">
                     <h3 class="text-lg font-semibold text-white mb-3">Legend & Instructions</h3>
                     <div class="flex items-center mb-2">
                         <div class="w-5 h-5 rounded-sm bg-blue-600/30 mr-3"></div>
-                        <span class="text-sm">ESP (Stack Pointer) / Next Instruction</span>
+                        <span class="text-sm">ESP (Stack Pointer) / EIP (Next Instruction)</span>
                     </div>
                     <div class="flex items-center mb-2">
                         <div class="w-5 h-5 rounded-sm bg-emerald-500/20 border-l-[3px] border-emerald-500 mr-3"></div>
                         <span class="text-sm">Last Executed Instruction</span>
                     </div>
-                    <div class="flex items-center">
+                    <div class="flex items-center mb-2">
                         <div class="w-5 h-5 rounded-sm bg-red-500/30 mr-3"></div>
                         <span class="text-sm">EBP (Base Pointer)</span>
                     </div>
+                    <div class="flex items-center mb-2">
+                        <div class="w-5 h-5 rounded-sm bg-amber-500/25 border-l-[3px] border-amber-500 mr-3"></div>
+                        <span class="text-sm">Changed Value (register or stack cell)</span>
+                    </div>
+                    <div class="flex items-center">
+                        <div class="w-2 h-2 rounded-full bg-red-500 mr-4 ml-1.5"></div>
+                        <span class="text-sm">Breakpoint (click gutter to toggle)</span>
+                    </div>
                     <p class="text-xs text-gray-400 mt-4">
-                        Supported: PUSH, POP, MOV, ADD, SUB, LEA, CMP, JMP, JZ/JE, JNZ/JNE, CALL, RET, ENTER, LEAVE. <br>
+                        Supported: PUSH, POP, MOV, ADD, SUB, XOR, AND, OR, NOT, INC, DEC, NOP, LEA, CMP, TEST, SHL, SHR, NEG, XCHG, JMP, JZ/JE, JNZ/JNE, CALL, RET, ENTER, LEAVE. <br>
                         Operands: registers (EAX), decimals (42), hex (0xFF). <br>
                         Stack memory: <code>[esp+4]</code>, <code>[ebp-8]</code>, <code>[reg]</code>. <br>
                         Data memory: <code>[x]</code>, <code>[y]</code>, <code>[z]</code> or <code>[0x400000]</code>. <br>
                         LEA computes address without dereferencing. <br>
                         CMP sets zero flag; JZ/JNZ branch on it. <br>
-                        Lines with ';' or just labels are skipped.
+                        Lines with ';' or just labels are skipped. <br>
+                        Shortcuts: <kbd class="bg-gray-700 px-1 rounded">Space</kbd> step,
+                        <kbd class="bg-gray-700 px-1 rounded">Backspace</kbd> undo,
+                        <kbd class="bg-gray-700 px-1 rounded">Escape</kbd> stop.
                     </p>
                 </div>
             </div>
@@ -172,10 +242,24 @@
                     <div id="registers" class="register-grid font-mono text-sm">
                         <!-- Registers will be dynamically inserted here -->
                     </div>
-                    <h2 class="text-xl font-semibold text-white mb-4 mt-8">Explanation</h2>
+                    <div class="flex items-center gap-2 mt-8 mb-4">
+                        <button id="tab-latest-btn"
+                            class="px-3 py-1 text-sm font-semibold rounded-t-lg bg-gray-800 text-white border border-gray-700 border-b-0"
+                            onclick="window._switchExplanationTab('latest')">Latest</button>
+                        <button id="tab-log-btn"
+                            class="px-3 py-1 text-sm font-semibold rounded-t-lg bg-gray-700 text-gray-400 border border-gray-600 border-b-0"
+                            onclick="window._switchExplanationTab('log')">Log</button>
+                        <button id="copy-log-btn"
+                            class="hidden ml-auto px-3 py-1 text-xs font-medium rounded bg-blue-600 hover:bg-blue-500 text-white"
+                            onclick="window._copyLog()">Copy Log</button>
+                    </div>
                     <div id="explanation"
                         class="bg-gray-800 border border-gray-700 rounded-lg p-4 text-gray-300 text-sm font-mono">
                         Welcome! Enter some assembly code or use the example. Click 'Execute Next' to begin.
+                    </div>
+                    <div id="explanation-log"
+                        class="hidden bg-gray-800 border border-gray-700 rounded-lg p-4 text-gray-300 text-sm font-mono overflow-y-auto"
+                        style="max-height: 400px;">
                     </div>
                 </div>
 
@@ -206,12 +290,20 @@
             // DOM Elements
             const codeInput = document.getElementById('assembly-code');
             const stepBtn = document.getElementById('step-btn');
+            const stepBackBtn = document.getElementById('step-back-btn');
             const resetBtn = document.getElementById('reset-btn');
             const shareBtn = document.getElementById('share-btn');
+            const runBtn = document.getElementById('run-btn');
             const registersDiv = document.getElementById('registers');
             const stackDiv = document.getElementById('stack-visualization');
             const dataDiv = document.getElementById('data-visualization');
             const explanationDiv = document.getElementById('explanation');
+            const explanationLogDiv = document.getElementById('explanation-log');
+            const tabLatestBtn = document.getElementById('tab-latest-btn');
+            const tabLogBtn = document.getElementById('tab-log-btn');
+            const copyLogBtn = document.getElementById('copy-log-btn');
+            const speedSlider = document.getElementById('speed-slider');
+            const speedLabel = document.getElementById('speed-label');
 
             const initialCode = `; x86 Stack Simulator Demo
 ; Sum 1..5 using a loop, store in data memory
@@ -246,6 +338,7 @@ pop ebp`;
             const STACK_BASE = 0x800000;
             const STACK_SIZE = 1024; // 1KB stack
             const WORD_SIZE = 4;
+            const CODE_BASE = 0x00401000;
 
             const DATA_BASE = 0x400000;
             const DATA_SIZE = 64; // 16 dwords
@@ -259,6 +352,16 @@ pop ebp`;
             let lastExecutedLine;
             let instructions;
             let labels;
+            let lineToAddress;
+            let addressToLine;
+            let runInterval = null;
+            let changedAddresses = new Set();
+            let prevRegisters = {};
+            let breakpoints = new Set();
+            let stateHistory = [];
+            let explanationLog = [];
+            let explanationStepCounter = 0;
+            let activeExplanationTab = 'latest';
 
             // --- Memory Helpers ---
             const STACK_BOTTOM = STACK_BASE - STACK_SIZE + WORD_SIZE;
@@ -284,6 +387,7 @@ pop ebp`;
                     throw new Error(`Memory write out of bounds at 0x${address.toString(16)}`);
                 }
                 stack.setUint32(offset, value, true);
+                changedAddresses.add(address);
             }
 
             function resolveAddress(inner) {
@@ -344,6 +448,12 @@ pop ebp`;
 
                 instructionPointer = 0;
                 lastExecutedLine = -1;
+                changedAddresses = new Set();
+                prevRegisters = {};
+                stateHistory = [];
+                explanationLog = [];
+                explanationStepCounter = 0;
+                switchExplanationTab('latest');
 
                 // Load code from URL hash or use default
                 try {
@@ -359,6 +469,16 @@ pop ebp`;
                 }
 
                 parseCode();
+
+                // Set EIP to first executable instruction's address
+                registers.eip = 0;
+                for (let i = 0; i < instructions.length; i++) {
+                    if (lineToAddress[i] !== null) {
+                        registers.eip = lineToAddress[i];
+                        break;
+                    }
+                }
+
                 updateCodeHighlight(true);
                 updateRegistersUI();
                 updateStackUI();
@@ -368,27 +488,58 @@ pop ebp`;
                 stepBtn.disabled = false;
             }
 
+            // --- Helpers ---
+            function formatAddr(addr) {
+                return '0x' + addr.toString(16).padStart(8, '0');
+            }
+
             // --- Code Parsing ---
             function parseCode() {
                 const code = codeInput.innerText.trim();
                 instructions = code.split('\n').map(line => line.trim().toLowerCase());
                 labels = {};
+                lineToAddress = new Array(instructions.length).fill(null);
+                addressToLine = {};
+
+                let addr = CODE_BASE;
+                const labelLines = {};
+
+                // First pass: assign addresses to executable lines, record label positions
                 instructions.forEach((line, index) => {
                     if (line.endsWith(':')) {
-                        labels[line.slice(0, -1)] = index;
+                        labelLines[line.slice(0, -1)] = index;
+                    } else if (line !== '' && !line.startsWith(';')) {
+                        lineToAddress[index] = addr;
+                        addressToLine[addr] = index;
+                        addr++;
                     }
                 });
+
+                // Second pass: resolve labels to addresses (next executable line after label)
+                for (const [name, lineIndex] of Object.entries(labelLines)) {
+                    let resolved = null;
+                    for (let i = lineIndex + 1; i < instructions.length; i++) {
+                        if (lineToAddress[i] !== null) {
+                            resolved = lineToAddress[i];
+                            break;
+                        }
+                    }
+                    labels[name] = resolved;
+                }
             }
 
             // --- UI Update Functions ---
             function updateRegistersUI() {
                 registersDiv.innerHTML = Object.entries(registers)
-                    .map(([reg, val]) => `
-                        <div class="flex justify-between items-center bg-gray-800 p-2 rounded-md">
+                    .map(([reg, val]) => {
+                        const changed = prevRegisters.hasOwnProperty(reg) && prevRegisters[reg] !== val;
+                        return `
+                        <div class="flex justify-between items-center bg-gray-800 p-2 rounded-md${changed ? ' highlight-changed' : ''}">
                             <span class="font-bold text-gray-400">${reg.toUpperCase()}</span>
-                            <span class="text-blue-400">0x${val.toString(16).padStart(8, '0')}</span>
+                            <span class="text-blue-400">0x${(val >>> 0).toString(16).padStart(8, '0')}</span>
                         </div>
-                    `).join('');
+                    `;
+                    }).join('');
             }
 
             function updateStackUI() {
@@ -405,6 +556,7 @@ pop ebp`;
                     const classList = ['stack-row', 'p-1', 'rounded-sm', 'flex', 'justify-between'];
                     if (isEsp) classList.push('highlight-esp');
                     if (isEbp) classList.push('highlight-ebp');
+                    if (changedAddresses.has(addr)) classList.push('highlight-changed');
 
                     const value = stack.getUint32(addr - (STACK_BASE - STACK_SIZE + WORD_SIZE), true);
 
@@ -443,19 +595,47 @@ pop ebp`;
 
             function updateCodeHighlight(isReset = false) {
                 const savedScrollTop = codeInput.scrollTop;
+                const lineNumWidth = String(instructions.length).length;
+
                 const html = instructions.map((line, index) => {
                     const escapedLine = line.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    const lineNum = String(index + 1).padStart(lineNumWidth, ' ');
+                    const addr = lineToAddress[index];
+                    const addrStr = addr !== null ? formatAddr(addr) : ' '.repeat(10);
+                    const isExecutable = addr !== null;
+                    const hasBp = breakpoints.has(index);
+                    const bpGutter = isExecutable
+                        ? `<span class="${hasBp ? 'breakpoint-dot' : 'breakpoint-gutter'}" data-bp-line="${index}"></span>`
+                        : `<span class="breakpoint-gutter"></span>`;
+                    const lineInfo = `<span class="line-info">${bpGutter}<span class="text-gray-600">${lineNum}</span> <span class="text-gray-500">${addrStr}</span> </span>`;
+
+                    const bpClass = hasBp ? ' breakpoint-line' : '';
                     if (!isReset && index === instructionPointer && !stepBtn.disabled) {
-                        return `<div class="current-line">${escapedLine || '&nbsp;'}</div>`;
+                        return `<div class="current-line${bpClass}">${lineInfo}${escapedLine || '&nbsp;'}</div>`;
                     }
                     if (!isReset && index === lastExecutedLine) {
-                        return `<div class="executed-line">${escapedLine || '&nbsp;'}</div>`;
+                        return `<div class="executed-line${bpClass}">${lineInfo}${escapedLine || '&nbsp;'}</div>`;
                     }
-                    return `<div>${escapedLine || '&nbsp;'}</div>`;
+                    return `<div class="${bpClass}">${lineInfo}${escapedLine || '&nbsp;'}</div>`;
                 }).join('');
 
                 codeInput.innerHTML = html;
                 codeInput.scrollTop = savedScrollTop;
+
+                // Attach breakpoint click handlers (mousedown to prevent contenteditable focus)
+                codeInput.querySelectorAll('[data-bp-line]').forEach(el => {
+                    el.addEventListener('mousedown', (e) => {
+                        e.stopPropagation();
+                        e.preventDefault();
+                        const lineIdx = parseInt(el.dataset.bpLine);
+                        if (breakpoints.has(lineIdx)) {
+                            breakpoints.delete(lineIdx);
+                        } else {
+                            breakpoints.add(lineIdx);
+                        }
+                        updateCodeHighlight(isReset);
+                    });
+                });
 
                 const highlightedLine = codeInput.querySelector('.current-line');
                 if (highlightedLine) {
@@ -472,15 +652,70 @@ pop ebp`;
                 updateStackUI();
                 updateDataUI();
                 updateCodeHighlight();
+                stepBackBtn.disabled = stateHistory.length === 0;
             }
 
-            function setExplanation(text) {
+            function setExplanation(text, logEntry) {
                 explanationDiv.style.opacity = 0;
                 setTimeout(() => {
                     explanationDiv.textContent = text;
                     explanationDiv.style.opacity = 1;
                 }, 150);
+                if (logEntry) {
+                    explanationLog.push(logEntry);
+                    if (activeExplanationTab === 'log') renderLogView();
+                }
             }
+
+            function switchExplanationTab(tab) {
+                activeExplanationTab = tab;
+                if (tab === 'latest') {
+                    explanationDiv.classList.remove('hidden');
+                    explanationLogDiv.classList.add('hidden');
+                    copyLogBtn.classList.add('hidden');
+                    tabLatestBtn.className = 'px-3 py-1 text-sm font-semibold rounded-t-lg bg-gray-800 text-white border border-gray-700 border-b-0';
+                    tabLogBtn.className = 'px-3 py-1 text-sm font-semibold rounded-t-lg bg-gray-700 text-gray-400 border border-gray-600 border-b-0';
+                } else {
+                    explanationDiv.classList.add('hidden');
+                    explanationLogDiv.classList.remove('hidden');
+                    copyLogBtn.classList.remove('hidden');
+                    tabLogBtn.className = 'px-3 py-1 text-sm font-semibold rounded-t-lg bg-gray-800 text-white border border-gray-700 border-b-0';
+                    tabLatestBtn.className = 'px-3 py-1 text-sm font-semibold rounded-t-lg bg-gray-700 text-gray-400 border border-gray-600 border-b-0';
+                    renderLogView();
+                }
+            }
+            window._switchExplanationTab = switchExplanationTab;
+
+            function escapeHtml(s) {
+                return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            }
+
+            function renderLogView() {
+                if (explanationLog.length === 0) {
+                    explanationLogDiv.innerHTML = '<span class="text-gray-500 italic">No steps executed yet.</span>';
+                    return;
+                }
+                explanationLogDiv.innerHTML = explanationLog.map(entry =>
+                    `<div class="mb-3 pb-3 border-b border-gray-700 last:border-b-0">` +
+                    `<span class="text-blue-400 font-semibold">[Step ${entry.step}]</span> ` +
+                    `<span class="text-gray-400">${escapeHtml(entry.line)}</span>` +
+                    `<pre class="mt-1 whitespace-pre-wrap text-gray-300">${escapeHtml(entry.text)}</pre>` +
+                    `</div>`
+                ).join('');
+                explanationLogDiv.scrollTop = explanationLogDiv.scrollHeight;
+            }
+
+            function copyLog() {
+                const text = explanationLog.map(entry =>
+                    `[Step ${entry.step}] ${entry.line}\n${entry.text}`
+                ).join('\n\n');
+                navigator.clipboard.writeText(text).then(() => {
+                    const original = copyLogBtn.textContent;
+                    copyLogBtn.textContent = 'Copied!';
+                    setTimeout(() => { copyLogBtn.textContent = original; }, 1500);
+                });
+            }
+            window._copyLog = copyLog;
 
             // --- Value & Operand Parsing ---
             function getValue(operand) {
@@ -540,12 +775,29 @@ pop ebp`;
                     return;
                 }
 
+                // Save snapshot for undo
+                const snapshot = {
+                    registers: { ...registers },
+                    stackBuffer: stack.buffer.slice(0),
+                    dataBuffer: dataMemory.buffer.slice(0),
+                    flags: { ...flags },
+                    ip: instructionPointer,
+                    lastExecutedLine: lastExecutedLine,
+                };
+                stateHistory.push(snapshot);
+                if (stateHistory.length > 50) stateHistory.shift();
+
+                prevRegisters = { ...registers };
+                changedAddresses.clear();
+                explanationStepCounter++;
+
                 let line = instructions[instructionPointer];
 
                 // Skip comments, empty lines and labels
                 while (line.startsWith(';') || line === '' || line.endsWith(':')) {
                     instructionPointer++;
                     if (instructionPointer >= instructions.length) {
+                        explanationStepCounter--;
                         setExplanation("End of program.");
                         stepBtn.disabled = true;
                         updateCodeHighlight();
@@ -553,6 +805,9 @@ pop ebp`;
                     }
                     line = instructions[instructionPointer];
                 }
+
+                // Set EIP to current instruction's address
+                registers.eip = lineToAddress[instructionPointer] || 0;
 
                 lastExecutedLine = instructionPointer;
 
@@ -636,17 +891,17 @@ pop ebp`;
                         }
                         case 'jmp': {
                             const target = operands[0];
-                            if (labels[target] === undefined) throw new Error(`Label not found: ${target}`);
-                            nextIp = labels[target];
+                            if (labels[target] == null) throw new Error(`Label not found: ${target}`);
+                            nextIp = addressToLine[labels[target]];
                             explanation += `\n- Unconditional jump to '${target}'.`;
                             break;
                         }
                         case 'jz':
                         case 'je': {
                             const target = operands[0];
-                            if (labels[target] === undefined) throw new Error(`Label not found: ${target}`);
+                            if (labels[target] == null) throw new Error(`Label not found: ${target}`);
                             if (flags.zero) {
-                                nextIp = labels[target];
+                                nextIp = addressToLine[labels[target]];
                                 explanation += `\n- Zero flag is set. Jumping to '${target}'.`;
                             } else {
                                 explanation += `\n- Zero flag is not set. Not jumping.`;
@@ -656,9 +911,9 @@ pop ebp`;
                         case 'jnz':
                         case 'jne': {
                             const target = operands[0];
-                            if (labels[target] === undefined) throw new Error(`Label not found: ${target}`);
+                            if (labels[target] == null) throw new Error(`Label not found: ${target}`);
                             if (!flags.zero) {
-                                nextIp = labels[target];
+                                nextIp = addressToLine[labels[target]];
                                 explanation += `\n- Zero flag is not set. Jumping to '${target}'.`;
                             } else {
                                 explanation += `\n- Zero flag is set. Not jumping.`;
@@ -666,22 +921,26 @@ pop ebp`;
                             break;
                         }
                         case 'call': {
-                            const returnAddr = instructionPointer + 1;
+                            const returnAddr = lineToAddress[instructionPointer] + 1;
                             if (registers.esp - WORD_SIZE < STACK_BOTTOM) throw new Error('Stack overflow: no space left on the stack.');
                             registers.esp -= WORD_SIZE;
                             writeMemory(registers.esp, returnAddr);
                             const targetLabel = operands[0];
-                            if (labels[targetLabel] === undefined) throw new Error(`Label not found: ${targetLabel}`);
-                            nextIp = labels[targetLabel];
-                            explanation += `\n- Pushed return address (${returnAddr}) onto the stack.\n- Jumping to label '${targetLabel}'.`;
+                            if (labels[targetLabel] == null) throw new Error(`Label not found: ${targetLabel}`);
+                            nextIp = addressToLine[labels[targetLabel]];
+                            explanation += `\n- Pushed return address (${formatAddr(returnAddr)}) onto the stack.\n- Jumping to label '${targetLabel}'.`;
                             break;
                         }
                         case 'ret': {
                             if (registers.esp >= STACK_BASE) throw new Error('Stack underflow: cannot RET with an empty stack.');
                             const returnAddr = readMemory(registers.esp);
                             registers.esp += WORD_SIZE;
-                            nextIp = returnAddr;
-                            explanation += `\n- Popped return address (${returnAddr}) from stack.\n- Jumping back.`;
+                            if (addressToLine[returnAddr] !== undefined) {
+                                nextIp = addressToLine[returnAddr];
+                            } else {
+                                nextIp = instructions.length; // end of program
+                            }
+                            explanation += `\n- Popped return address (${formatAddr(returnAddr)}) from stack.\n- Jumping back.`;
                             break;
                         }
                         case 'enter': { // Combines push ebp; mov ebp, esp
@@ -702,31 +961,255 @@ pop ebp`;
                             explanation += `\n- Set ESP to EBP's value.\n- Popped old EBP (0x${newEbp.toString(16)}) back into EBP.`;
                             break;
                         }
+                        case 'xor': {
+                            const dest = getDestination(operands[0]);
+                            const value = getValue(operands[1]);
+                            if (dest.type !== 'register' || value === null) throw new Error('Invalid operands for XOR.');
+                            registers[dest.name] = (registers[dest.name] ^ value) >>> 0;
+                            flags.zero = (registers[dest.name] === 0);
+                            explanation += `\n- XOR'd ${dest.name.toUpperCase()} with 0x${value.toString(16)}. Result: ${formatAddr(registers[dest.name])}.`;
+                            break;
+                        }
+                        case 'and': {
+                            const dest = getDestination(operands[0]);
+                            const value = getValue(operands[1]);
+                            if (dest.type !== 'register' || value === null) throw new Error('Invalid operands for AND.');
+                            registers[dest.name] = (registers[dest.name] & value) >>> 0;
+                            flags.zero = (registers[dest.name] === 0);
+                            explanation += `\n- AND'd ${dest.name.toUpperCase()} with 0x${value.toString(16)}. Result: ${formatAddr(registers[dest.name])}.`;
+                            break;
+                        }
+                        case 'or': {
+                            const dest = getDestination(operands[0]);
+                            const value = getValue(operands[1]);
+                            if (dest.type !== 'register' || value === null) throw new Error('Invalid operands for OR.');
+                            registers[dest.name] = (registers[dest.name] | value) >>> 0;
+                            flags.zero = (registers[dest.name] === 0);
+                            explanation += `\n- OR'd ${dest.name.toUpperCase()} with 0x${value.toString(16)}. Result: ${formatAddr(registers[dest.name])}.`;
+                            break;
+                        }
+                        case 'not': {
+                            const dest = getDestination(operands[0]);
+                            if (dest === null || dest.type !== 'register') throw new Error('NOT destination must be a register.');
+                            registers[dest.name] = (~registers[dest.name]) >>> 0;
+                            explanation += `\n- Bitwise NOT on ${dest.name.toUpperCase()}. Result: ${formatAddr(registers[dest.name])}.`;
+                            break;
+                        }
+                        case 'inc': {
+                            const dest = getDestination(operands[0]);
+                            if (dest === null || dest.type !== 'register') throw new Error('INC destination must be a register.');
+                            registers[dest.name] += 1;
+                            flags.zero = (registers[dest.name] === 0);
+                            explanation += `\n- Incremented ${dest.name.toUpperCase()}. New value: 0x${registers[dest.name].toString(16)}.`;
+                            break;
+                        }
+                        case 'dec': {
+                            const dest = getDestination(operands[0]);
+                            if (dest === null || dest.type !== 'register') throw new Error('DEC destination must be a register.');
+                            registers[dest.name] -= 1;
+                            flags.zero = (registers[dest.name] === 0);
+                            explanation += `\n- Decremented ${dest.name.toUpperCase()}. New value: 0x${registers[dest.name].toString(16)}.`;
+                            break;
+                        }
+                        case 'test': {
+                            const dest = getDestination(operands[0]);
+                            const value = getValue(operands[1]);
+                            if (dest === null || dest.type !== 'register' || value === null) throw new Error('Invalid operands for TEST.');
+                            const result = (registers[dest.name] & value) >>> 0;
+                            flags.zero = (result === 0);
+                            explanation += `\n- TEST ${dest.name.toUpperCase()} & 0x${value.toString(16)} = 0x${result.toString(16)}. Zero flag: ${flags.zero}.`;
+                            break;
+                        }
+                        case 'shl': {
+                            const dest = getDestination(operands[0]);
+                            const value = getValue(operands[1]);
+                            if (dest === null || dest.type !== 'register' || value === null) throw new Error('Invalid operands for SHL.');
+                            registers[dest.name] = (registers[dest.name] << value) >>> 0;
+                            flags.zero = (registers[dest.name] === 0);
+                            explanation += `\n- Shifted ${dest.name.toUpperCase()} left by ${value}. Result: ${formatAddr(registers[dest.name])}.`;
+                            break;
+                        }
+                        case 'shr': {
+                            const dest = getDestination(operands[0]);
+                            const value = getValue(operands[1]);
+                            if (dest === null || dest.type !== 'register' || value === null) throw new Error('Invalid operands for SHR.');
+                            registers[dest.name] = registers[dest.name] >>> value;
+                            flags.zero = (registers[dest.name] === 0);
+                            explanation += `\n- Shifted ${dest.name.toUpperCase()} right by ${value}. Result: ${formatAddr(registers[dest.name])}.`;
+                            break;
+                        }
+                        case 'neg': {
+                            const dest = getDestination(operands[0]);
+                            if (dest === null || dest.type !== 'register') throw new Error('NEG destination must be a register.');
+                            registers[dest.name] = (-registers[dest.name]) >>> 0;
+                            flags.zero = (registers[dest.name] === 0);
+                            explanation += `\n- Negated ${dest.name.toUpperCase()}. Result: ${formatAddr(registers[dest.name])}.`;
+                            break;
+                        }
+                        case 'xchg': {
+                            const dest = getDestination(operands[0]);
+                            const src = getDestination(operands[1]);
+                            if (dest === null || dest.type !== 'register' || src === null || src.type !== 'register') throw new Error('XCHG operands must be registers.');
+                            const tmp = registers[dest.name];
+                            registers[dest.name] = registers[src.name];
+                            registers[src.name] = tmp;
+                            explanation += `\n- Swapped ${dest.name.toUpperCase()} and ${src.name.toUpperCase()}. ${dest.name.toUpperCase()}=${formatAddr(registers[dest.name])}, ${src.name.toUpperCase()}=${formatAddr(registers[src.name])}.`;
+                            break;
+                        }
+                        case 'nop': {
+                            explanation += `\n- No operation.`;
+                            break;
+                        }
                         default:
                             throw new Error(`Unknown instruction: ${mnemonic}`);
                     }
                     instructionPointer = nextIp;
-                    setExplanation(explanation);
+                    // Advance past non-executable lines so highlight is correct
+                    while (instructionPointer < instructions.length) {
+                        const l = instructions[instructionPointer];
+                        if (l.startsWith(';') || l === '' || l.endsWith(':')) {
+                            instructionPointer++;
+                        } else {
+                            break;
+                        }
+                    }
+                    // Update EIP to next executable instruction's address
+                    if (instructionPointer < instructions.length && lineToAddress[instructionPointer] !== null) {
+                        registers.eip = lineToAddress[instructionPointer];
+                    }
+                    setExplanation(explanation, { step: explanationStepCounter, line, text: explanation });
                 } catch (e) {
-                    setExplanation(`ERROR: ${e.message}\nAt line: ${line}`);
+                    const errText = `ERROR: ${e.message}\nAt line: ${line}`;
+                    setExplanation(errText, { step: explanationStepCounter, line, text: errText });
                     stepBtn.disabled = true;
                 }
 
                 updateAllUI();
                 if (instructionPointer >= instructions.length) {
-                    setExplanation(explanation + "\n\nEnd of program.");
+                    const endText = explanation + "\n\nEnd of program.";
+                    // Update the last log entry instead of adding a duplicate
+                    if (explanationLog.length > 0) {
+                        explanationLog[explanationLog.length - 1].text = endText;
+                        if (activeExplanationTab === 'log') renderLogView();
+                    }
+                    setExplanation(endText);
                     stepBtn.disabled = true;
                     updateCodeHighlight();
                 }
             }
 
+            // --- Step Back ---
+            function stepBack() {
+                if (stateHistory.length === 0) return;
+                const snapshot = stateHistory.pop();
+                registers = snapshot.registers;
+                stack = new DataView(snapshot.stackBuffer);
+                dataMemory = new DataView(snapshot.dataBuffer);
+                flags = snapshot.flags;
+                instructionPointer = snapshot.ip;
+                lastExecutedLine = snapshot.lastExecutedLine;
+                changedAddresses.clear();
+                prevRegisters = {};
+                stepBtn.disabled = false;
+                if (explanationLog.length > 0) {
+                    explanationLog.pop();
+                    explanationStepCounter--;
+                    if (activeExplanationTab === 'log') renderLogView();
+                }
+                updateAllUI();
+                setExplanation('Stepped back one instruction.');
+            }
+
+            // --- Run All ---
+            function getRunSpeed() {
+                const slider = document.getElementById('speed-slider');
+                return slider ? parseInt(slider.value) : 1000;
+            }
+
+            function stopRunSliderHandler() {
+                const slider = document.getElementById('speed-slider');
+                if (slider && slider._runHandler) {
+                    slider.removeEventListener('input', slider._runHandler);
+                    delete slider._runHandler;
+                }
+            }
+
+            function runAll() {
+                if (runInterval) {
+                    clearInterval(runInterval);
+                    runInterval = null;
+                    runBtn.textContent = 'Run All';
+                    stepBtn.disabled = false;
+                    stopRunSliderHandler();
+                    return;
+                }
+                if (stepBtn.disabled) return;
+                runBtn.textContent = 'Stop';
+                stepBtn.disabled = true;
+                function startInterval() {
+                    runInterval = setInterval(() => {
+                        stepBtn.disabled = false;
+                        step();
+                        if (stepBtn.disabled || breakpoints.has(instructionPointer)) {
+                            clearInterval(runInterval);
+                            runInterval = null;
+                            runBtn.textContent = 'Run All';
+                            stopRunSliderHandler();
+                            stepBtn.disabled = breakpoints.has(instructionPointer) ? false : stepBtn.disabled;
+                        } else {
+                            stepBtn.disabled = true;
+                        }
+                    }, getRunSpeed());
+                }
+                startInterval();
+
+                // Listen for speed changes while running
+                const slider = document.getElementById('speed-slider');
+                if (slider) {
+                    slider._runHandler = () => {
+                        if (runInterval) {
+                            clearInterval(runInterval);
+                            startInterval();
+                        }
+                    };
+                    slider.addEventListener('input', slider._runHandler);
+                }
+            }
+
             // --- Event Listeners ---
             stepBtn.addEventListener('click', step);
-            resetBtn.addEventListener('click', initialize);
+            stepBackBtn.addEventListener('click', stepBack);
+            resetBtn.addEventListener('click', () => {
+                if (runInterval) {
+                    clearInterval(runInterval);
+                    runInterval = null;
+                    runBtn.textContent = 'Run All';
+                }
+                initialize();
+            });
             shareBtn.addEventListener('click', shareCode);
-            codeInput.addEventListener('blur', () => { // Re-parse code when user clicks away
+            runBtn.addEventListener('click', runAll);
+            speedSlider.addEventListener('input', () => {
+                speedLabel.textContent = speedSlider.value + 'ms';
+            });
+            document.addEventListener('keydown', (e) => {
+                if (document.activeElement === codeInput) return;
+                if (e.code === 'Space') {
+                    e.preventDefault();
+                    if (!stepBtn.disabled) step();
+                } else if (e.code === 'Backspace') {
+                    e.preventDefault();
+                    stepBack();
+                } else if (e.code === 'Escape' && runInterval) {
+                    runAll(); // toggles off
+                }
+            });
+            codeInput.addEventListener('focus', () => {
+                codeInput.querySelectorAll('.line-info').forEach(el => el.remove());
+            });
+            codeInput.addEventListener('blur', () => {
                 parseCode();
-                updateCodeHighlight(true); // Reset highlight view
+                updateCodeHighlight(true);
             });
 
 
